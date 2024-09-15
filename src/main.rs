@@ -1,6 +1,6 @@
-use std::io::{self, Read};
+use std::io;
 
-fn generate_map() -> array {}
+// fn generate_map() ->  {}
 
 
 fn main() {
