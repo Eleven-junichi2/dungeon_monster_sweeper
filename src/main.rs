@@ -10,7 +10,7 @@ fn main() {
     println!("Press any key to continue");
     let mut input: String = String::new();
     io::stdin().read_line(&mut input);
-    println!("--- How to play ---"):
+    println!("--- How to play ---");
     println!("Press \"escape key\" to exit from the game");
     println!("Input \"x y\" of your destination (For example, \"12 2\" means go to (12, 2))");
     println!("Press any key to continue");
