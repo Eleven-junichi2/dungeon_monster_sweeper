@@ -36,8 +36,8 @@ fn main() {
     let mut rng = rand::thread_rng();
     let player = Player {
         pos: Coordinate {
-            x: rng.gen_range(0..=16),
-            y: rng.gen_range(0..=16),
+            x: rng.gen_range(0..16),
+            y: rng.gen_range(0..16),
         },
         strength: 2,
     };
@@ -66,10 +66,19 @@ fn main() {
     let mut map: [[char; 16]; 16] = [['*'; 16]; 16];
     for enemy in enemy_list {
         map[enemy.pos.y][enemy.pos.x] = 'E';
-    };
+    }
     map[player.pos.y][player.pos.x] = 'P';
+    let mut fog_of_war_map: [[bool; 16]; 16] = [[true; 16]; 16];
+    fog_of_war_map[player.pos.y][player.pos.x] = false; // 不可視タイルは?で表現
+    for (y, row) in fog_of_war_map.iter().enumerate() {
+        for (x, is_invisible) in row.iter().enumerate() {
+            if *is_invisible {
+                map[y][x] = '?';
+            }
+        }
+    }
+    // show map
     for row in map {
         println!("{}", &row.iter().collect::<String>());
-    };
-    // visible mapの実装
+    }
 }
