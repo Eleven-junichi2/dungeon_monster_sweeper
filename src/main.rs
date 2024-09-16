@@ -42,7 +42,7 @@ fn main() {
         strength: 2,
     };
     let mut enemy_list: Vec<Enemy> = Vec::new();
-    // place enemies
+    // prepare enemies
     for _ in 0..rng.gen_range(0..=255) {
         enemy_list.push(Enemy {
             pos: loop {
@@ -59,10 +59,7 @@ fn main() {
             strength: rng.gen_range(0..=255),
         });
     }
-    // [y][x]
-    // for row in map {
-    //     println!("{:?}", row);
-    // }
+    // prepare map
     let mut map: [[char; 16]; 16] = [['*'; 16]; 16];
     for enemy in enemy_list {
         map[enemy.pos.y][enemy.pos.x] = 'E';
