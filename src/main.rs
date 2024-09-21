@@ -55,6 +55,7 @@ fn main() {
     println!("--- How to play ---");
     println!("Enter \"exit\" to exit program");
     println!("Input \"x y\" of your destination (For example, \"12 2\" means go to (12, 2))");
+    println!("Input 'a' to combat enemy on same coordinate");
     println!("Press any key to continue");
     io::stdin().read_line(&mut input).unwrap();
     // マップ生成
@@ -88,6 +89,7 @@ fn main() {
         });
     }
     let mut fog_of_war_map = vec![vec![true; 16]; 16];
+    let mut is_player_at_same_place_as_enemy = false;
     let re = Regex::new(r"^\d+ \d+$").unwrap();
     loop {
         // prepare map
@@ -105,7 +107,7 @@ fn main() {
             }
         }
         // show map
-        for row in map {
+        for row in &map {
             println!("{}", &row.iter().collect::<String>());
         }
 
@@ -114,32 +116,38 @@ fn main() {
         let command = input.trim_end();
         if command == "exit" {
             break;
+        } else if command == "a" {
+            todo!("unimplemented");
         } else if re.is_match(command) {
             let mut destination = command.split_whitespace();
             let x: usize = destination.next().unwrap().parse().unwrap();
             let y: usize = destination.next().unwrap().parse().unwrap();
             (player.pos.x, player.pos.y) = if (x < 16) && (y < 16) {
-                println!(
-                    "new_x-x: {} new_y-y: {}",
-                    x as isize - player.pos.x as isize,
-                    y as isize - player.pos.y as isize
-                );
-                println!(
-                    "dy/dx: {}",
-                    x as isize - player.pos.x as isize / y as isize - player.pos.y as isize
-                );
-                // 移動方向を調べる
-                // 移動元座標から移動先座標のfog of warを明らかにする
+                // ↑ don't need to worry about negative numbers because they are already checked in the regular expression.
                 println!(
                     "Player move to (x,y = {},{}) from (x,y = {},{})",
                     x, y, player.pos.x, player.pos.y
                 );
+                // 移動元座標から移動先座標のfog of warを明らかにする
                 draw_line(&mut fog_of_war_map, player.pos.x, player.pos.y, x, y, false);
                 (x, y)
             } else {
-                // ↑ don't need to worry about negative numbers because they are already checked in the regular expression.
                 println!("Invalid coordinate for destination");
                 continue;
+            };
+            match map[player.pos.y][player.pos.x] {
+                'E' => {
+                    for enemy in enemy_list.iter() {
+                        if enemy.pos.x == player.pos.x && enemy.pos.y == player.pos.y {
+                            println!("You found an enemy: strength={}", enemy.strength);
+                            is_player_at_same_place_as_enemy = true;
+                        }
+                    }
+                }
+                '?' => {
+                    is_player_at_same_place_as_enemy = false;
+                }
+                _ => (),
             };
         }
     }
