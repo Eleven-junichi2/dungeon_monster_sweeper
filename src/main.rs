@@ -257,9 +257,9 @@ fn main() {
                 }
                 false => (),
             };
-        }
+        };
         if enemy_list.is_empty() {
             floor_progress += 1;
-        }
+        };
     }
 }
