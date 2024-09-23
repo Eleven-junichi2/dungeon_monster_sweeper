@@ -1,7 +1,16 @@
 // TODO: Logging game messages
 // TODO: Calculating and showing avereage of strength of enemies on the path player traveled.
-use std::io::{self, Write};
+use std::{
+    collections::HashSet,
+    hash::Hash,
+    io::{self, Write},
+    ops::{Index, IndexMut},
+};
 
+use crossterm::{
+    execute, queue,
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
+};
 use rand::{random, Rng};
 use regex::Regex;
 
@@ -16,19 +25,18 @@ struct Enemy {
     strength: u8,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct Coordinate {
     x: usize,
     y: usize,
 }
 
-fn draw_line<T: Copy>(
-    canvas: &mut Vec<Vec<T>>,
+fn mut_each_step_of_line_drawing(
     start_x: usize,
     start_y: usize,
     end_x: usize,
     end_y: usize,
-    brush: T,
+    f: &mut dyn FnMut(f64, f64),
 ) {
     // DDA algorithm implementation
     let dx = end_x as isize - start_x as isize;
@@ -43,41 +51,188 @@ fn draw_line<T: Copy>(
     let mut x: f64 = start_x as f64;
     let mut y: f64 = start_y as f64;
     for _ in 0..=steps {
-        canvas[y.round() as usize][x.round() as usize] = brush;
+        f(x, y);
         x += x_step;
         y += y_step;
     }
 }
 
-struct GameMap2d<T: Clone> {
-    rows: Vec<Vec<T>>,
+fn draw_line<T: Copy>(
+    canvas: &mut Vec<Vec<T>>,
+    start_x: usize,
+    start_y: usize,
+    end_x: usize,
+    end_y: usize,
+    brush: T,
+) {
+    mut_each_step_of_line_drawing(start_x, start_y, end_x, end_y, &mut |x, y| {
+        canvas[y.round() as usize][x.round() as usize] = brush
+    });
 }
 
-impl<T: Clone> GameMap2d<T> {
-    fn new(height: usize, width: usize, fill_with: T) -> Self {
-        GameMap2d {
-            rows: vec![vec![fill_with; width]; height],
+#[derive(Eq, Hash, PartialEq)]
+enum FogOfWar {
+    Coordinate(Coordinate),
+}
+
+struct DungeonFloor {
+    width: usize,
+    height: usize,
+    fog_of_wars: HashSet<FogOfWar>,
+    enemies: Vec<Enemy>,
+}
+
+impl DungeonFloor {
+    fn fog_of_war_maskmap(&self, width: usize, height: usize) -> Vec<Vec<bool>> {
+        let mut map = vec![vec![false; width]; height];
+        for fog_of_war in &self.fog_of_wars {
+            match fog_of_war {
+                FogOfWar::Coordinate(c) => map[c.y][c.x] = true,
+            };
         }
+        map
     }
-    fn height(&self) -> usize {
-        self.rows.len()
+    fn enemy_maskmap(&self, width: usize, height: usize) -> Vec<Vec<bool>> {
+        let mut map = vec![vec![false; width]; height];
+        for enemy in &self.enemies {
+            map[enemy.pos.y][enemy.pos.x] = true;
+        }
+        map
     }
-    fn width(&self) -> usize {
-        self.rows[0].len()
+}
+
+struct Dungeon {
+    floors: Vec<DungeonFloor>,
+    floor_progress: usize,
+}
+
+impl Dungeon {
+    fn advance_floor_progress(&mut self) {
+        self.floor_progress += 1;
     }
-    fn amount_of_squares(&self) -> usize {
-        self.height() * self.width()
+    fn add_floor(&mut self, floor: DungeonFloor) {
+        self.floors.push(floor);
     }
+    fn current_floor(&self) -> &DungeonFloor {
+        &self.floors[self.floor_progress]
+    }
+    fn current_floor_mut(&mut self) -> &mut DungeonFloor {
+        &mut self.floors[self.floor_progress]
+    }
+    fn prepare_enemies_in_current_floor(&mut self, rng: &mut rand::rngs::ThreadRng) {
+        let mut enemy_list: Vec<Enemy> = Vec::new();
+        let mut already_used_positions: Vec<Coordinate> = Vec::new();
+        let mut how_many_enemies =
+            self.floors[self.floor_progress].height * self.floors[self.floor_progress].width;
+        if how_many_enemies > (1 + self.floor_progress).pow(2).into() {
+            how_many_enemies = 1 + self.floor_progress as usize;
+        }
+        for _ in 0..rng.gen_range(1..=how_many_enemies) {
+            let mut pos = Coordinate {
+                x: rng.gen_range(0..self.floors[self.floor_progress].width),
+                y: rng.gen_range(0..self.floors[self.floor_progress].height),
+            };
+            // TODO: fix retry logic
+            loop {
+                if already_used_positions.contains(&pos) {
+                    if random::<bool>() {
+                        if pos.x < self.floors[self.floor_progress].width - 1 {
+                            pos.x += 1
+                        }
+                    } else {
+                        if pos.x > 0 {
+                            pos.x -= 1
+                        }
+                    };
+                    if random::<bool>() {
+                        if pos.y > 0 {
+                            pos.y -= 1
+                        }
+                    } else {
+                        if pos.y < self.floors[self.floor_progress].height - 1 {
+                            pos.y += 1
+                        }
+                    };
+                } else {
+                    break;
+                }
+            }
+            already_used_positions.push(pos.clone());
+            enemy_list.push(Enemy {
+                pos,
+                strength: rng.gen_range(1..=(1 + self.floor_progress as u8).pow(2)),
+            });
+        }
+        self.floors[self.floor_progress].enemies = enemy_list;
+    }
+}
+
+struct ColorTheme {
+    floor_color: Color,
+    enemy_color: Color,
+    player_color: Color,
+    fog_of_war_color: Color,
 }
 
 struct GameWorld {
-    map: GameMap2d<char>,
-    enemies: Vec<Enemy>,
-    floor_progress: u8,
+    char_for_enemy: char,
+    char_for_floor_square: char,
+    char_for_player: char,
+    char_for_fog_of_war: char,
+    dungeon: Dungeon,
+    player: Player,
+    color_theme: ColorTheme,
 }
 
 impl GameWorld {
-    
+    fn print_dungeon_map(&self) {
+        let width = self.dungeon.current_floor().width;
+        let height = self.dungeon.current_floor().height;
+        let width_digits = width.to_string().len();
+        // prepare 2d vec to display dungeon map
+        let mut map_display = vec![vec![self.char_for_floor_square; width]; height];
+        for enemy in &self.dungeon.current_floor().enemies {
+            map_display[enemy.pos.y][enemy.pos.x] = self.char_for_enemy;
+        }
+        for fog_of_war in &self.dungeon.current_floor().fog_of_wars {
+            match fog_of_war {
+                FogOfWar::Coordinate(c) => map_display[c.y][c.x] = self.char_for_fog_of_war,
+            };
+        }
+        map_display[self.player.pos.y][self.player.pos.x] = self.char_for_player;
+        // print x-axis ruler
+        println!(
+            "{}",
+            (0..width)
+                .map(|x| x.to_string() + &" ".repeat(width_digits - (x.to_string().len())))
+                .collect::<Vec<String>>()
+                .join("")
+        );
+        // print map
+        for (y, row) in map_display.iter().enumerate() {
+            for x in row.iter() {
+                queue!(
+                    io::stdout(),
+                    SetForegroundColor(if x == &self.char_for_floor_square {
+                        self.color_theme.floor_color
+                    } else if x == &self.char_for_player {
+                        self.color_theme.player_color
+                    } else if x == &self.char_for_enemy {
+                        self.color_theme.enemy_color
+                    } else if x == &self.char_for_fog_of_war {
+                        self.color_theme.fog_of_war_color
+                    } else {
+                        Color::Reset
+                    }),
+                    Print(format!("{}{}", x, " ".repeat(width_digits - 1))),
+                    ResetColor
+                )
+                .unwrap();
+                // print!();
+            }
+            println!("{}", y);
+        }
+    }
 }
 
 fn print_how_to_play() {
@@ -88,125 +243,84 @@ fn print_how_to_play() {
     println!("Input 'help' to see this message");
 }
 
-fn prepare_enemies(
-    rng: &mut rand::rngs::ThreadRng,
-    floor_progress: u8,
-    map_height: usize,
-    map_width: usize,
-) -> Vec<Enemy> {
-    let mut enemy_list: Vec<Enemy> = Vec::new();
-    let mut already_used_positions: Vec<Coordinate> = Vec::new();
-    let mut how_many_enemies = map_height * map_width;
-    if how_many_enemies > (1 + floor_progress).pow(2).into() {
-        how_many_enemies = 1 + floor_progress as usize;
-    }
-    for _ in 0..rng.gen_range(1..=how_many_enemies) {
-        let mut pos = Coordinate {
-            x: rng.gen_range(0..map_width),
-            y: rng.gen_range(0..map_height),
-        };
-        loop {
-            if already_used_positions.contains(&pos) {
-                if random::<bool>() {
-                    if pos.x < map_width - 1 {
-                        pos.x += 1
-                    }
-                } else {
-                    if pos.x > 0 {
-                        pos.x -= 1
-                    }
-                };
-                if random::<bool>() {
-                    if pos.y > 0 {
-                        pos.y -= 1
-                    }
-                } else {
-                    if pos.y < map_height - 1 {
-                        pos.y += 1
-                    }
-                };
-            } else {
-                break;
-            }
-        }
-        already_used_positions.push(pos.clone());
-        enemy_list.push(Enemy {
-            pos,
-            strength: rng.gen_range(1..=(1 + floor_progress).pow(2)),
-        });
-    }
-    enemy_list
-}
-
 fn main() {
-    let mut floor_progress: u8 = 0;
-    let map_width = 16;
-    let map_height = 16;
-    let map_width_digits = map_width.to_string().len();
     println!("--- Dungeon Monster Sweeper ---");
     print_how_to_play();
     println!("Press any key to continue");
     let mut input: String = String::new();
     io::stdin().read_line(&mut input).unwrap();
-    let mut rng = rand::thread_rng();
-    let mut player = Player {
-        pos: Coordinate { x: 0, y: 0 },
-        strength: 2,
-        hp: 3,
+
+    let mut gameworld = GameWorld {
+        char_for_enemy: 'E',
+        char_for_floor_square: '.',
+        char_for_player: '@',
+        char_for_fog_of_war: '?',
+        dungeon: Dungeon {
+            floors: vec![],
+            floor_progress: 0,
+        },
+        player: Player {
+            pos: Coordinate { x: 0, y: 0 },
+            strength: 2,
+            hp: 3,
+        },
+        color_theme: ColorTheme {
+            floor_color: Color::DarkYellow,
+            enemy_color: Color::Red,
+            player_color: Color::Green,
+            fog_of_war_color: Color::DarkBlue,
+        },
     };
-    let mut enemy_list: Vec<Enemy> =
-        prepare_enemies(&mut rng, floor_progress, map_height, map_width);
-    let mut fog_of_war_map = vec![vec![false; map_width]; map_height];
+    gameworld.dungeon.add_floor(DungeonFloor {
+        width: 16,
+        height: 16,
+        fog_of_wars: HashSet::new(),
+        enemies: Vec::new(),
+    });
+    let mut rng = rand::thread_rng();
+    gameworld.dungeon.prepare_enemies_in_current_floor(&mut rng);
     let re = Regex::new(r"^\d+ \d+$").unwrap();
     'mainloop: loop {
-        if enemy_list.is_empty() {
-            if floor_progress > 0 {
+        if gameworld.dungeon.current_floor().enemies.is_empty() {
+            gameworld.dungeon.advance_floor_progress();
+            if gameworld.dungeon.floor_progress > 0 {
                 println!("All enemy are eliminated! Player goes to the next floor…");
             };
-            fog_of_war_map.fill(vec![true; map_width]);
-            enemy_list = prepare_enemies(&mut rng, floor_progress, map_height, map_width);
-            player.pos.x = rng.gen_range(0..map_width);
-            player.pos.y = rng.gen_range(0..map_height);
-            player.hp += 1;
-        }
-        // prepare map display
-        let mut enemy_map = vec![vec![false; map_width]; map_height];
-        let mut map_display = vec![vec!['.'; map_width]; map_height];
-        for enemy in &enemy_list {
-            enemy_map[enemy.pos.y][enemy.pos.x] = true;
-            map_display[enemy.pos.y][enemy.pos.x] = 'E';
-        }
-        map_display[player.pos.y][player.pos.x] = 'P';
-        fog_of_war_map[player.pos.y][player.pos.x] = false; // 不可視タイルは?で表現
-        for (y, row) in fog_of_war_map.iter().enumerate() {
-            for (x, is_invisible) in row.iter().enumerate() {
-                if *is_invisible {
-                    map_display[y][x] = '?';
+            if gameworld.dungeon.floor_progress > 99 {
+                println!("Congratulations! You've reached the final floor!");
+                println!("Press any key to exit.");
+                io::stdin().read_line(&mut input).unwrap();
+                break 'mainloop;
+            }
+            gameworld.dungeon.add_floor(DungeonFloor {
+                width: 16,
+                height: 16,
+                fog_of_wars: HashSet::new(),
+                enemies: Vec::new(),
+            });
+            for y in 0..gameworld.dungeon.current_floor().height {
+                for x in 0..gameworld.dungeon.current_floor().width {
+                    gameworld
+                        .dungeon
+                        .current_floor_mut()
+                        .fog_of_wars
+                        .insert(FogOfWar::Coordinate(Coordinate { x, y }));
                 }
             }
+            gameworld.dungeon.prepare_enemies_in_current_floor(&mut rng);
+            gameworld.player.pos.x = rng.gen_range(0..gameworld.dungeon.current_floor().width);
+            gameworld.player.pos.y = rng.gen_range(0..gameworld.dungeon.current_floor().height);
+            gameworld.player.hp += 1;
         }
-        // print x-axis ruler
-        println!(
-            "{}",
-            (0..map_width)
-                .map(|x| x.to_string() + &" ".repeat(map_width_digits - (x.to_string().len())))
-                .collect::<Vec<String>>()
-                .join("")
-        ); 
         // print map
-        for (y, row) in map_display.iter().enumerate() {
-            for row in row.iter() {
-                print!("{}{}", row, " ".repeat(map_width_digits - 1));
-            }
-            println!("{}", y);
-        }
+        gameworld.print_dungeon_map();
         // print infomation
         println!(
             "| Current floor: {}F | Player's strength: {} HP: {} | Remaining enemy: {} |",
-            floor_progress,
-            player.strength,
-            player.hp,
-            enemy_list.len()
+            gameworld.dungeon.floor_progress,
+            gameworld.player.strength,
+            gameworld.player.hp,
+            gameworld.dungeon.current_floor().enemies.len()
         );
         // process command from input
         print!("> ");
@@ -220,29 +334,34 @@ fn main() {
             print_how_to_play();
         } else if command == "a" {
             let mut is_enemy_found = false;
-            for (enemy_id, enemy) in enemy_list.iter().enumerate() {
-                if enemy.pos.x == player.pos.x && enemy.pos.y == player.pos.y {
+            for (enemy_id, enemy) in gameworld.dungeon.current_floor().enemies.iter().enumerate() {
+                if enemy.pos.x == gameworld.player.pos.x && enemy.pos.y == gameworld.player.pos.y {
                     is_enemy_found = true;
                     println!(
                         "Player combat enemy at (x,y = {},{})",
                         enemy.pos.x, enemy.pos.y
                     );
                     if rng.gen_ratio(
-                        player.strength.into(),
-                        (player.strength + enemy.strength).into(),
+                        gameworld.player.strength.into(),
+                        (gameworld.player.strength + enemy.strength).into(),
                     ) {
                         let gained_strength = rng.gen_range(1..=enemy.strength);
                         println!(
                             "Player triumped over enemy! +{} Player's strength points",
                             gained_strength
                         );
-                        player.strength += gained_strength;
-                        enemy_list.remove(enemy_id);
+                        gameworld.player.strength += gained_strength;
+                        gameworld
+                            .dungeon
+                            .current_floor_mut()
+                            .enemies
+                            .remove(enemy_id);
                     } else {
                         println!("Player was defeated by enemy! -1 Player's hit points");
-                        player.hp -= 1;
-                        if player.hp == 0 {
+                        gameworld.player.hp -= 1;
+                        if gameworld.player.hp == 0 {
                             println!("GAMEOVER… Press any key to exit.");
+                            io::stdin().read_line(&mut input).unwrap();
                             break 'mainloop;
                         }
                     }
@@ -256,41 +375,50 @@ fn main() {
             let mut destination = command.split_whitespace();
             let x: usize = destination.next().unwrap().parse().unwrap();
             let y: usize = destination.next().unwrap().parse().unwrap();
-            (player.pos.x, player.pos.y) = if (x < map_width) && (y < map_height) {
-                // ↑ don't need to worry about negative numbers because they are already checked in the regular expression.
-                println!(
-                    "Player move to (x,y = {},{}) from (x,y = {},{})",
-                    x, y, player.pos.x, player.pos.y
-                );
-                // 移動元座標から移動先座標のfog of warを明らかにする
-                draw_line(&mut fog_of_war_map, player.pos.x, player.pos.y, x, y, false);
-                (x, y)
-            } else {
-                println!("Invalid coordinate for destination");
-                continue;
-            };
-            match enemy_map[player.pos.y][player.pos.x] {
-                true => {
-                    for enemy in &enemy_list {
-                        if enemy.pos.x == player.pos.x && enemy.pos.y == player.pos.y {
+            (gameworld.player.pos.x, gameworld.player.pos.y) =
+                if (x < gameworld.dungeon.current_floor().width)
+                    && (y < gameworld.dungeon.current_floor().height)
+                {
+                    // ↑ don't need to worry about negative numbers because they are already checked in the regular expression.
+                    println!(
+                        "Player move to (x,y = {},{}) from (x,y = {},{})",
+                        x, y, gameworld.player.pos.x, gameworld.player.pos.y
+                    );
+                    // 移動元座標から移動先座標のfog of warを明らかにする
+                    mut_each_step_of_line_drawing(
+                        gameworld.player.pos.x,
+                        gameworld.player.pos.y,
+                        x,
+                        y,
+                        &mut |x, y| {
+                            gameworld.dungeon.current_floor_mut().fog_of_wars.remove(
+                                &FogOfWar::Coordinate(Coordinate {
+                                    x: x as usize,
+                                    y: y as usize,
+                                }),
+                            );
+                        },
+                    );
+                    // draw_line(&mut fog_of_war_map, player.pos.x, player.pos.y, x, y, false);
+                    for enemy in &gameworld.dungeon.current_floor().enemies {
+                        if enemy.pos.x == x && enemy.pos.y == y {
                             println!(
                                 "Player found enemy at (x,y = {},{}). It's strength is {}. ",
                                 enemy.pos.x, enemy.pos.y, enemy.strength
                             );
                             println!(
                                 "Player's winning percentage against it is {}%",
-                                (player.strength as f64
-                                    / (player.strength + enemy.strength) as f64)
+                                (gameworld.player.strength as f64
+                                    / (gameworld.player.strength + enemy.strength) as f64)
                                     * 100.0
                             );
                         }
                     }
-                }
-                false => (),
-            };
-        };
-        if enemy_list.is_empty() {
-            floor_progress += 1;
+                    (x, y)
+                } else {
+                    println!("Invalid coordinate for destination");
+                    continue;
+                };
         };
     }
 }
