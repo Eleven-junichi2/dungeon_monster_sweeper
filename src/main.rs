@@ -49,6 +49,37 @@ fn draw_line<T: Copy>(
     }
 }
 
+struct GameMap2d<T: Clone> {
+    rows: Vec<Vec<T>>,
+}
+
+impl<T: Clone> GameMap2d<T> {
+    fn new(height: usize, width: usize, fill_with: T) -> Self {
+        GameMap2d {
+            rows: vec![vec![fill_with; width]; height],
+        }
+    }
+    fn height(&self) -> usize {
+        self.rows.len()
+    }
+    fn width(&self) -> usize {
+        self.rows[0].len()
+    }
+    fn amount_of_squares(&self) -> usize {
+        self.height() * self.width()
+    }
+}
+
+struct GameWorld {
+    map: GameMap2d<char>,
+    enemies: Vec<Enemy>,
+    floor_progress: u8,
+}
+
+impl GameWorld {
+    
+}
+
 fn print_how_to_play() {
     println!("--- How to play ---");
     println!("Enter \"exit\" to exit program");
