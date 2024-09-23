@@ -1,4 +1,9 @@
 // TODO: Logging game messages
+// TODO: Save & Load functionality
+// TODO: Add enemy more variants
+// TODO: Player movement controls with arrow keys
+// TODO: Score counter
+// TODO: Music and sound effects
 // TODO: Calculating and showing avereage of strength of enemies on the path player traveled.
 use std::{
     collections::HashSet,
