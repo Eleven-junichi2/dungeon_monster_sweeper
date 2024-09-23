@@ -284,7 +284,7 @@ fn main() {
         if gameworld.dungeon.current_floor().enemies.is_empty() {
             gameworld.dungeon.advance_floor_progress();
             if gameworld.dungeon.floor_progress > 0 {
-                println!("All enemy are eliminated! Player goes to the next floor…");
+                println!("All enemies are slain! The player goes to the next floor.");
             };
             if gameworld.dungeon.floor_progress > 99 {
                 println!("Congratulations! You've reached the final floor!");
@@ -338,7 +338,7 @@ fn main() {
                 if enemy.pos.x == gameworld.player.pos.x && enemy.pos.y == gameworld.player.pos.y {
                     is_enemy_found = true;
                     println!(
-                        "Player combat enemy at (x,y = {},{})",
+                        "Player combats enemy at (x,y = {},{})",
                         enemy.pos.x, enemy.pos.y
                     );
                     if rng.gen_ratio(
@@ -347,7 +347,7 @@ fn main() {
                     ) {
                         let gained_strength = rng.gen_range(1..=enemy.strength);
                         println!(
-                            "Player triumped over enemy! +{} Player's strength points",
+                            "The player triumphed over the enemy! +{} Player's strength points",
                             gained_strength
                         );
                         gameworld.player.strength += gained_strength;
@@ -369,7 +369,7 @@ fn main() {
                 }
             }
             if !is_enemy_found {
-                println!("No enemy found at your current coordinate");
+                println!("No enemies are found at your current coordinates.");
             }
         } else if re.is_match(command) {
             let mut destination = command.split_whitespace();
@@ -381,7 +381,7 @@ fn main() {
                 {
                     // ↑ don't need to worry about negative numbers because they are already checked in the regular expression.
                     println!(
-                        "Player move to (x,y = {},{}) from (x,y = {},{})",
+                        "Player moved to (x,y = {},{}) from (x,y = {},{})",
                         x, y, gameworld.player.pos.x, gameworld.player.pos.y
                     );
                     // 移動元座標から移動先座標のfog of warを明らかにする
@@ -407,7 +407,7 @@ fn main() {
                                 enemy.pos.x, enemy.pos.y, enemy.strength
                             );
                             println!(
-                                "Player's winning percentage against it is {}%",
+                                "Player's winning percentage against the foe is {}%",
                                 (gameworld.player.strength as f64
                                     / (gameworld.player.strength + enemy.strength) as f64)
                                     * 100.0
@@ -416,7 +416,7 @@ fn main() {
                     }
                     (x, y)
                 } else {
-                    println!("Invalid coordinate for destination");
+                    println!("The destination coordinate is invalid.");
                     continue;
                 };
         };
