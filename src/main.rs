@@ -53,12 +53,14 @@ fn mut_each_step_of_line_drawing(
     };
     let x_step = dx as f64 / steps as f64;
     let y_step = dy as f64 / steps as f64;
+    dbg!(y_step);
     let mut x: f64 = start_x as f64;
     let mut y: f64 = start_y as f64;
     for _ in 0..=steps {
         f(x, y);
         x += x_step;
         y += y_step;
+        dbg!(y);
     }
 }
 
